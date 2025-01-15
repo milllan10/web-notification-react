@@ -7,7 +7,7 @@ const NotificationComponent = () => {
   // Function to fetch notification from the backend
   const fetchNotification = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/notification');
+      const response = await axios.get('https://web-notification-react-backend.vercel.app/api/notification');
       const { message } = response.data;
 
       // Show the notification
