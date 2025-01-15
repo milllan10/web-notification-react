@@ -1,0 +1,613 @@
+'use client';
+
+import React, { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import CustomTableWidget from '@/components/custom/table/CustomTableWidget';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { IPR } from '@/app/(home)/service/_api/purchaseRequisition';
+
+import dayjs from 'dayjs';
+import { getPurchaseOrder } from '@/app/_api/purchaseOrder';
+import { getUser } from '@/utils/auth-utils/auth';
+
+import { Tooltip, ActionIcon, Text, Badge, Tab } from 'rizzui';
+
+import { TTableColumns } from '@/components/custom/table/table.types';
+import EyeIcon from '@/components/icons/eye';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+
+import { atom, useAtom } from 'jotai';
+import { IPurchaseOrder } from '@/app/_api/po.types';
+import PoFilterComponent, {
+  IPoPeriodFilterOption,
+  IPoStatus,
+  IPoWorkDoneInFilterOption,
+} from '@/app/_components/PoFilter';
+import { PR_SERVICE_TYPES_ENUM } from '@/constants/pr_constants';
+
+export const servicePoListAtom = atom<IPurchaseOrder[]>([]);
+
+const getLanguagesFromServices = (
+  data: IPurchaseOrder
+): string | React.ReactNode => {
+  if (data.po_type === PR_SERVICE_TYPES_ENUM.Others) {
+    return '-';
+  }
+
+  let languages = data.services.map((item) => {
+    return item.item;
+  });
+
+  const extraLanguages = 2 - languages.length < 0 ? languages.length - 2 : 0;
+
+  if(languages){
+    if(languages){
+      if (languages.length > 2) {
+        languages = languages?.slice(0, 2);
+      }
+    }
+  }
+
+  return (
+    <span>
+      {languages.map((item, index) => {
+        return `${item}${index < languages.length - 1 ? ',' : ''} `;
+      })}
+      {!!extraLanguages ? `+ ${extraLanguages}` : null}
+    </span>
+  );
+};
+
+const Page = () => {
+  const searchParams = useSearchParams();
+  const [, setServicePoList] = useAtom(servicePoListAtom);
+
+  const router = useRouter();
+
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const user = getUser();
+
+  const pathName = usePathname();
+
+  const page = Number(searchParams.get('page')) || 0;
+
+  const [rowsPerPage, _setRowsPerPage] = useState(10);
+
+  const newFilter: any = {
+    payment: {},
+    type: {
+      id: 1,
+      value: 'all',
+      title: 'All',
+    },
+    invoice: {},
+    period: {},
+    work_done_in_period: {},
+  };
+
+  // search param for po status
+  const poStatusFilter: IPoStatus | null = !!searchParams.get('po-status')
+    ? JSON.parse(searchParams.get('po-status') as unknown as string)
+    : null;
+
+  if (!!poStatusFilter) {
+    newFilter.type.title = poStatusFilter.label;
+    newFilter.type.value = poStatusFilter.value;
+  }
+
+  // search param for po period
+  const poPeriodFilter: IPoPeriodFilterOption | null = !!searchParams.get(
+    'po-period'
+  )
+    ? JSON.parse(searchParams.get('po-period') as unknown as string)
+    : null;
+
+  if (!!poPeriodFilter) {
+    newFilter.period.title = poPeriodFilter.label;
+    newFilter.period.value = poPeriodFilter.value;
+  }
+
+  // search param for po work done in
+  const poWorkDoneInFilter: IPoWorkDoneInFilterOption | null =
+    !!searchParams.get('work-done-in')
+      ? JSON.parse(searchParams.get('work-done-in') as unknown as string)
+      : null;
+
+  if (!!poWorkDoneInFilter) {
+    newFilter.work_done_in_period.title = poWorkDoneInFilter.label;
+    newFilter.work_done_in_period.value = poWorkDoneInFilter.value;
+  }
+
+  const { data: allPurchaseOrder, isLoading } = useQuery({
+    queryKey: ['purchaseOrderList', page, rowsPerPage, searchQuery, newFilter],
+    queryFn: ({ queryKey }) => {
+      const [, page, size, searchQuery] = queryKey as [
+        string,
+        number,
+        number,
+        string,
+      ];
+      return getPurchaseOrder({
+        filters: newFilter,
+        oracle_id: user.id,
+        search: searchQuery,
+        page: page,
+        size: size,
+      });
+    },
+    placeholderData: keepPreviousData,
+  });
+
+  const columnLogic: TTableColumns<IPR> = [
+    {
+      title: 'Sr No',
+      dataIndex: 'pr_number',
+      key: 'pr_number',
+      width: 50,
+      // @ts-ignore
+      render: (value, row, index) => {
+        return (
+          <div key={`${row?._id}-pr_number`} className="">
+            {Number(rowsPerPage) * Number(page) + index + 1}
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Order Number',
+      dataIndex: 'order_number',
+      key: 'order_number',
+      width: 150,
+      // @ts-ignore
+      render: (value, row, index) => {
+        return (
+          <div key={`${row?._id}-order_number`} className="">
+            {row?.ref_obj?.OrderNumber}
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Title',
+      dataIndex: '_id',
+      key: 'tr_type_dependant',
+      width: 100,
+      render: (value, row) => {
+        return (
+          <div key={`${row?._id}-tr_type_dependant`} className="capitalize">
+            {/* @ts-ignore */}
+            {row?.title ? row?.title : '-'}
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Client Name',
+      dataIndex: 'client_name',
+      key: 'client_name',
+      width: 150,
+      render: (value, row) => {
+        return (
+          <div key={`${row?._id}-client_name`}>
+            <Link
+              href={`/service/purchase-orders/preview/${row?._id}`}
+              className="cursor-pointer"
+            >
+              {/* {row?.project_name?.ProjectName} */}
+              {row?.client_name?.CustomerName || '-'}
+            </Link>
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Languages',
+      dataIndex: 'supplier',
+      key: 'languages',
+      width: 150,
+      render: (value, row) => {
+        return (
+          <div key={`${row?._id}-client_name`}>
+            <Link
+              href={`/service/purchase-orders/preview/${row?._id}`}
+              className="cursor-pointer"
+            >
+              {getLanguagesFromServices(row as unknown as IPurchaseOrder)}
+            </Link>
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Supplier',
+      dataIndex: 'supplier',
+      key: 'client_name',
+      width: 150,
+      render: (value, row) => {
+        return (
+          <div key={`${row?._id}-client_name`}>
+            <Link
+              href={`/service/purchase-orders/preview/${row?._id}`}
+              className="cursor-pointer"
+            >
+              {/* @ts-ignore */}
+              {row?.services?.[0]?.supplier?.Supplier || '-'}
+            </Link>
+          </div>
+        );
+      },
+    },
+    {
+      title: <div>Created At</div>,
+      dataIndex: 'createdAt',
+      key: 'created_at',
+      width: 100,
+      render: (value, row) => {
+        return (
+          <div key={`${row?._id}-created_at`}>
+            {dayjs((row?.createdAt || '')?.split('T')?.[0]).format(
+              'DD-MM-YYYY'
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      title: 'Po Amount',
+      dataIndex: 'expenditure_type',
+      key: 'expenditure_type',
+      width: 100,
+      render: (value, row) => {
+        return (
+          <div key={`${row?._id}-expenditure_type`}>
+            {/* @ts-ignore */}
+            {(row?.total || 0).toLocaleString('en-IN', {
+              maximumFractionDigits: 2,
+              minimumFractionDigits: 2,
+              currency: 'INR',
+              style: 'currency',
+            })}
+          </div>
+        );
+      },
+    },
+    // {
+    //   title: 'Date Of Creation',
+    //   dataIndex: 'expenditure_item_date',
+    //   key: 'expenditure_date',
+    //   width: 100,
+    //   render: (value, row) => {
+    //     return (
+    //       <div key={`${row?._id}-expenditure_date`}>
+    //         {dayjs((row?.expenditure_item_date || '')?.split('T')?.[0]).format(
+    //           'DD-MM-YYYY'
+    //         )}
+    //       </div>
+    //     );
+    //   },
+    // },
+    {
+      title: <div className="">Action</div>,
+      //   @ts-ignore
+      dataIndex: '',
+      key: 'action',
+      width: 50,
+      render: (value, row) => {
+        return (
+          <div
+            key={`${row?._id}-action`}
+            className="flex items-center justify-center gap-2"
+          >
+            <Tooltip
+              size="sm"
+              content={'View Purchase Requisition'}
+              placement="top"
+              color="invert"
+            >
+              <Link href={`/service/purchase-orders/preview/${row?._id}`}>
+                <ActionIcon
+                  as="span"
+                  size="sm"
+                  variant="outline"
+                  aria-label={'View Purchase requisition'}
+                  className="hover:text-gray-700"
+                >
+                  <EyeIcon className="h-4 w-4" />
+                </ActionIcon>
+              </Link>
+            </Tooltip>
+          </div>
+        );
+      },
+    },
+  ];
+
+  const demoDataObject = allPurchaseOrder?.data
+    ? allPurchaseOrder?.data.map((item) => {
+        return {
+          id: item._id,
+          // @ts-ignore
+          pr_type: item.pr_type,
+          created_at: item.createdAt,
+          expenditure_date: item.expenditure_item_date,
+          ...item,
+        };
+      })
+    : [];
+  
+  function handleUrlPagination(page: number) {
+    router.push(`${pathName}?page=${page}`);
+  }
+  const dataChange =
+    allPurchaseOrder?.data?.[0]?._id || ('undef' as unknown as string);
+
+  useEffect(() => {
+    setServicePoList(allPurchaseOrder?.data || []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataChange]);
+  return (
+    <div>
+      <h2 className="mb-5">Purchase Order</h2>
+      <Tab>
+        <Tab.List>
+          <Tab.ListItem onClick={()=>{router.push('/service/purchase-orders')}}>All PO</Tab.ListItem>
+          <Tab.ListItem onClick={()=>{router.push('?po-status=%7B"label"%3A"Active"%2C"value"%3A"active"%7D')}}>Active</Tab.ListItem>
+          <Tab.ListItem onClick={()=>{router.push('?po-status=%7B"label"%3A"Closed"%2C"value"%3A"closed"%7D')}}>Closed</Tab.ListItem>
+          <Tab.ListItem onClick={()=>{router.push('?po-status=%7B"label"%3A"Due"%2C"value"%3A"due"%7D')}}>Due</Tab.ListItem>
+          <Tab.ListItem onClick={()=>{router.push('?po-status=%7B"label"%3A"Cancelled"%2C"value"%3A"cancelled"%7D')}}>Cancelled</Tab.ListItem>
+        </Tab.List>
+        <Tab.Panels></Tab.Panels>
+      </Tab>
+      <CustomTableWidget
+        currentPage={page + 1}
+        isLoading={false}
+        setCurrentPage={(page: number) => handleUrlPagination(page - 1)}
+        searchPlaceHolder={'Supplier Name'}
+        handleSearch={setSearchQuery}
+        pageSize={rowsPerPage}
+        searchTerm={searchQuery}
+        columns={columnLogic}
+        tableData={demoDataObject}
+        totalItems={
+          allPurchaseOrder?.totalItems
+            ? Number(allPurchaseOrder?.totalItems)
+            : 1
+        }
+        // title={'Purchase Requisition'}
+        title={''}
+        hasFilter={true}
+        filterElement={<PoFilterComponent />}
+      />
+    </div>
+  );
+};
+
+export default Page;
+
+
+
+
+
+
+
+
+
+'use client';
+
+import React, { useState } from 'react';
+import { Input, ActionIcon } from 'rizzui';
+import cn from '@/utils/class-names';
+import WidgetCard from '@/components/cards/widget-card';
+import {
+  PiMagnifyingGlassBold,
+  PiCaretDownBold,
+  PiCaretUpBold,
+} from 'react-icons/pi';
+import ControlledTable from './ControlledTable';
+import TableFilterDrawer from './TableFilterDrawer';
+
+type BasicTableWidgetProps = {
+  title?: React.ReactNode;
+  className?: string;
+  pageSize: number;
+  setPageSize?: React.Dispatch<React.SetStateAction<number>>;
+  enablePagination?: boolean;
+  variant?: 'modern' | 'minimal' | 'classic' | 'elegant' | 'retro';
+  enableSearch?: boolean;
+  paginatorClassName?: string;
+  searchPlaceholder?: string;
+  noGutter?: boolean;
+  scroll?: {
+    x?: number;
+    y?: number;
+  };
+  sticky?: boolean;
+  isLoading: boolean;
+  handleSearch: (search: string) => void;
+  searchTerm: string;
+  columns: any[];
+  tableData: any[];
+  totalItems: number;
+  currentPage: number;
+  handlePaginate: (page: number) => void;
+  hasFilter: boolean;
+  filterElement: React.ReactNode;
+  showSearch?: boolean;
+  tableHeightClass?: string;
+  extraElement?: React.ReactNode;
+};
+
+export default function BasicTableWidget({
+  title,
+  pageSize = 7,
+  setPageSize,
+  enablePagination,
+  variant = 'minimal',
+  enableSearch = true,
+  showSearch = true,
+  paginatorClassName,
+  noGutter,
+  sticky,
+  // @ts-ignore
+  scroll = { x: false, y: false },
+  className,
+  searchPlaceholder = 'Search...',
+  // new custom fields here
+  isLoading,
+  handleSearch,
+  searchTerm,
+  columns,
+  tableData,
+  totalItems,
+  currentPage,
+  handlePaginate,
+  hasFilter,
+  filterElement,
+  tableHeightClass = '',
+  extraElement = null,
+}: BasicTableWidgetProps) {
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+
+  return (
+    <WidgetCard
+      title={
+        <>
+          {title ? <div className="mb-3">{title}</div> : null}
+          {showSearch && !Boolean(extraElement) ? (
+            <Input
+              type="search"
+              placeholder={searchPlaceholder}
+              value={searchTerm}
+              onClear={() => handleSearch('')}
+              onChange={(event) => handleSearch(event.target.value)}
+              clearable
+              prefix={<PiMagnifyingGlassBold className="h-4 w-4" />}
+            />
+          ) : null}
+        </>
+      }
+      className={cn('flex flex-col', className)}
+      headerClassName="widget-card-header flex-col sm:flex-row [&>.ps-2]:ps-0 [&>.ps-2]:w-full sm:[&>.ps-2]:w-auto [&>.ps-2]:mt-3 sm:[&>.ps-2]:mt-0"
+      {...(enableSearch && {
+        action: (
+          <div className="flex items-center gap-2">
+            {hasFilter ? (
+              <>
+                {/* <ActionIcon
+                  size="sm"
+                  variant="outline"
+                  // rounded="full"
+                  className="expand-row-icon h-10 w-16"
+                  onClick={() => setFilterDrawerOpen(true)}
+                >
+                  Filters
+                </ActionIcon> */}
+                <TableFilterDrawer>
+                  {filterElement}
+                </TableFilterDrawer>
+              </>
+            ) : null}
+          </div>
+        ),
+      })}
+    >
+      <div
+        className={cn('table-wrapper flex-grow', noGutter && '-mx-5 lg:-mx-7')}
+      >
+        {!!extraElement ? (
+          <div className="flex justify-between px-5">
+            {extraElement}
+            {showSearch ? (
+              <Input
+                type="search"
+                placeholder={searchPlaceholder}
+                value={searchTerm}
+                onClear={() => handleSearch('')}
+                onChange={(event) => handleSearch(event.target.value)}
+                clearable
+                prefix={<PiMagnifyingGlassBold className="h-4 w-4" />}
+              />
+            ) : null}
+          </div>
+        ) : null}
+        <ControlledTable
+          isLoading={isLoading}
+          data={tableData}
+          columns={columns}
+          sticky={sticky}
+          variant={variant}
+          className={cn('mt-4 min-h-[calc(100vh-300px)]', tableHeightClass)}
+          // className="mt-4 min-h-[calc(100vh-300px)]"
+          {...(enablePagination && {
+            paginatorOptions: {
+              pageSize,
+              ...(setPageSize && { setPageSize }),
+              total: totalItems,
+              current: currentPage,
+              onChange: (page: number) => handlePaginate(page),
+            },
+            paginatorClassName: cn(
+              'mt-4 lg:mt-5',
+              noGutter && 'px-5 lg:px-7',
+              paginatorClassName
+            ),
+          })}
+          // @ts-ignore
+          // scroll={{ x: false, y: false }} // Disable scroll
+          scroll={scroll}
+          // style={{ width: '100%' }} // Fit the table to container
+        />
+      </div>
+    </WidgetCard>
+  );
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+'use client';
+
+import React from 'react';
+import { PiXBold, PiCaretDownBold } from 'react-icons/pi';
+import { ActionIcon, Title, Dropdown, Button } from 'rizzui';
+function TableFilterDropdown({
+  drawerTitle,
+  children,
+}: React.PropsWithChildren<{
+  drawerTitle?: string;
+}>) {
+  return (
+    <Dropdown placement='left-start'>
+      <Dropdown.Trigger>
+        <Button as="span" variant=" outline">
+        Filters<PiCaretDownBold className="ml-2 w-5" />
+        </Button>
+      </Dropdown.Trigger>
+      <Dropdown.Menu className={'w-96'}>
+        <div className="rounded-md bg-white dark:bg-gray-100">
+          <div className="p-4">
+          
+            <div className="grid grid-cols-1 gap-6">
+              {children}
+            </div>
+          </div>
+        </div>
+      </Dropdown.Menu>
+    </Dropdown>
+  );
+}
+
+export default TableFilterDropdown;
+
